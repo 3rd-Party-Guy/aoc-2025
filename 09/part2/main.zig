@@ -2,13 +2,23 @@ const std = @import("std");
 
 pub fn main() !void {
     const gpa = std.heap.page_allocator;
-    const content = try std.fs.cwd().readFileAlloc("test", gpa, .unlimited);
+    const content = try std.fs.cwd().readFileAlloc("input", gpa, .unlimited);
     defer gpa.free(content);
 
     const xP = try gpa.alloc(u32, 512);
     const yP = try gpa.alloc(u32, 512);
+    const minXForY = try gpa.alloc(u32, 512*512*512);
+    const maxXForY = try gpa.alloc(u32, 512*512*512);
+
+    @memset(xP, 0);
+    @memset(yP, 0);
+    @memset(minXForY, std.math.maxInt(u32));
+    @memset(maxXForY, 0);
+
     defer gpa.free(xP);
     defer gpa.free(yP);
+    defer gpa.free(minXForY);
+    defer gpa.free(maxXForY);
 
     var pointCount: usize = 0;
 
@@ -31,29 +41,31 @@ pub fn main() !void {
 
         xP[pointCount] = newX;
         yP[pointCount] = newY;
+
         pointCount += 1;
     }
 
-    var maxX: u32 = 0;
-    var maxY: u32 = 0;
-    for (xP[0..pointCount]) |x| {
-        if (x > maxX) maxX = x;
+    for (0..pointCount) |i| {
+        for (i+1..pointCount) |j| {
+            if (yP[i] == yP[j]) {
+                minXForY[yP[i]] = @min(xP[i], xP[j]);
+                maxXForY[yP[i]] = @max(xP[i], xP[j]);
+            }
+        }
     }
-    for (yP[0..pointCount]) |y| {
-        if (y > maxY) maxY = y;
-    }
-
-    std.debug.print("Max X: {}\n", .{maxX});
-    std.debug.print("Max Y: {}\n", .{maxY});
-
-    var allowed = try gpa.alloc(bool, (maxX + 1) * (maxY + 1));
-    defer gpa.free(allowed);
-    @memset(allowed, false);
 
     for (0..pointCount) |i| {
-        allowed[idx(xP[i], yP[i], maxX)] = true;
+        for (i+1..pointCount) |j| {
+            if (xP[i] == xP[j]) {
+                for (@min(yP[i], yP[j])..@max(yP[i], yP[j])) |y| {
+                    minXForY[y] = @min(minXForY[y], xP[i], xP[j]);
+                    maxXForY[y] = @max(maxXForY[y], xP[i], xP[j]);
+                }
+            }
+        }
     }
 
+    var largestArea: u64 = 0;
     for (0..pointCount) |i| {
         for (i+1..pointCount) |j| {
             const xi: i64 = xP[i];
@@ -61,29 +73,25 @@ pub fn main() !void {
             const yi: i64 = yP[i];
             const yj: i64 = yP[j];
 
-            if (xi == xj) {
-                const ya = @min(yi, yj);
-                const yb = @max(yi, yj);
-                for (ya..yb+1) |y| {
-                    allowed[idx(xi, y, maxX)] = true;
-                }
-            } else {
-                const xa = @min(xi, xj);
-                const xb = @max(xi, xj);
-                for (xa..xb+1) |x| {
-                    allowed[idx(x, yi, maxX)] = true;
-                }
+            const minX: u32 = @intCast(@min(xi, xj));
+            const maxX: u32 = @intCast(@max(xi, xj));
+            const minY: usize = @intCast(@min(yi, yj));
+            const maxY: usize = @intCast(@max(yi, yj));
+            var isValid: bool = true;
+            for (minY..maxY) |y| {
+                if (minX < minXForY[y] or maxX > maxXForY[y]) isValid = false;
+            }
+            if (!isValid) continue;
+
+            const distX: u64 = @intCast(@abs(xi - xj) + 1);
+            const distY: u64 = @intCast(@abs(yi - yj) + 1);
+
+            const area: u64 = distX * distY;
+
+            if (area > largestArea) {
+                largestArea = area;
             }
         }
     }
-
-
-}
-
-fn flood(x: usize, y: usize, maxX: usize) usize {
-
-}
-
-inline fn idx(x: usize, y: usize, maxX: usize) usize {
-    return y * (maxX + 1) + x;
+    std.debug.print("Result: {}\n", .{largestArea});
 }
